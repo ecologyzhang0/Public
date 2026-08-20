@@ -2,7 +2,7 @@
 
 Windows-first local application that converts each selected PDF into an editable DOCX. Its UI uses the standard Windows Python runtime rather than a large third-party GUI toolkit to keep the portable executable small.
 
-The application has one user workflow: choose a PDF, choose an output folder, and convert. It automatically uses the PDF text layer when available and invokes bundled RapidOCR only when a page does not contain usable text.
+The application supports selecting one or many PDFs, choosing one output folder, and converting them sequentially. It automatically uses the PDF text layer when available and invokes bundled RapidOCR only when a page does not contain usable text. Duplicate PDF filenames are numbered automatically so a batch cannot overwrite an earlier Word file.
 
 ## Current Scope
 
