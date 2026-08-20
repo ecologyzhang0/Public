@@ -145,6 +145,57 @@ def test_digital_text_keeps_bold_italic_and_font_family(tmp_path: Path) -> None:
     assert FontResolver().resolve("ABCDEF+Calibri-Bold") == "Calibri"
 
 
+def test_digital_filled_vector_remains_a_background_overlay(tmp_path: Path) -> None:
+    source = tmp_path / "filled-vector.pdf"
+    document = pymupdf.open()
+    page = document.new_page(width=595, height=842)
+    page.draw_rect((72, 72, 360, 128), color=None, fill=(0.08, 0.35, 0.68))
+    page.insert_text((88, 108), "White text on a filled form header", fontsize=14, color=(1, 1, 1))
+    document.save(source)
+    document.close()
+
+    output, _qa, _report = PdfToWordConverter().convert(source, tmp_path)
+
+    with zipfile.ZipFile(output) as archive:
+        media = [
+            Image.open(BytesIO(archive.read(name))).convert("RGBA")
+            for name in archive.namelist()
+            if name.startswith("word/media/")
+        ]
+        xml = archive.read("word/document.xml").decode("utf-8")
+    assert any(
+        pixel[3] > 0 and pixel[2] > pixel[0] + 60
+        for image in media
+        for pixel in image.getdata()
+    )
+    assert 'behindDoc="1"' in xml
+    assert "White text on a filled form header" in xml
+
+
+def test_digital_curved_vector_is_preserved_as_a_background_overlay(tmp_path: Path) -> None:
+    source = tmp_path / "curved-vector.pdf"
+    document = pymupdf.open()
+    page = document.new_page(width=595, height=842)
+    page.draw_circle((128, 100), 28, color=(0.78, 0.05, 0.05), width=2)
+    page.insert_text((180, 105), "Round checkbox remains visible", fontsize=13)
+    document.save(source)
+    document.close()
+
+    output, _qa, _report = PdfToWordConverter().convert(source, tmp_path)
+
+    with zipfile.ZipFile(output) as archive:
+        media = [
+            Image.open(BytesIO(archive.read(name))).convert("RGBA")
+            for name in archive.namelist()
+            if name.startswith("word/media/")
+        ]
+    assert any(
+        pixel[3] > 0 and pixel[0] > pixel[1] + 80
+        for image in media
+        for pixel in image.getdata()
+    )
+
+
 @pytest.mark.skipif(not LocalOcrEngine().is_available, reason="local OCR is unavailable")
 def test_scanned_page_automatically_runs_ocr(tmp_path: Path) -> None:
     original = tmp_path / "original.pdf"
