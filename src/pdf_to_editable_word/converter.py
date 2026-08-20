@@ -6,7 +6,7 @@ from typing import Callable
 from .document_model import PdfAnalyzer
 from .ocr import LocalOcrEngine, OcrUnavailableError
 from .qa import QaResult, run_editability_qa, write_conversion_report
-from .scan_mask import build_ocr_cleaned_background, extract_scanned_stamps
+from .scan_mask import build_ocr_cleaned_background, extract_scanned_stamps, suppress_ocr_text_under_stamps
 from .word_builder import PositionedWordBuilder
 
 ProgressCallback = Callable[[int, str], None]
@@ -51,6 +51,9 @@ class PdfToWordConverter:
                 extracted_stamps = extract_scanned_stamps(page)
                 if extracted_stamps:
                     page.qa_flags.append(f"scanned_stamps_extracted:{extracted_stamps}")
+                    suppressed = suppress_ocr_text_under_stamps(page)
+                    if suppressed:
+                        page.qa_flags.append(f"ocr_text_spans_suppressed_under_stamps:{suppressed}")
                 if not page.text_spans:
                     page.qa_flags.append("ocr_returned_no_text")
                 else:
