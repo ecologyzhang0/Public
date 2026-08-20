@@ -10,6 +10,7 @@ import pymupdf
 import pytest
 from PIL import Image, ImageDraw
 
+from pdf_to_editable_word.app import unique_output_stem
 from pdf_to_editable_word.converter import PdfToWordConverter
 from pdf_to_editable_word.document_model import BoundingBox, DocumentModel, PageModel
 from pdf_to_editable_word.font_resolver import FontResolver
@@ -49,6 +50,30 @@ def test_digital_pdf_creates_editable_docx_and_report(tmp_path: Path) -> None:
     assert details["pages"][0]["source_kind"] == "digital"
     assert details["pages"][0]["table_count"] == 1
     assert details["qa"]["status"] == qa.status
+
+
+def test_batch_output_names_do_not_overwrite_duplicate_pdf_names(tmp_path: Path) -> None:
+    output_dir = tmp_path / "output"
+    output_dir.mkdir()
+    reserved_stems: set[str] = set()
+    first_source = tmp_path / "first" / "contract.pdf"
+    second_source = tmp_path / "second" / "contract.pdf"
+    first_source.parent.mkdir()
+    second_source.parent.mkdir()
+    _make_digital_pdf(first_source)
+    _make_digital_pdf(second_source)
+
+    first_stem = unique_output_stem(first_source, output_dir, reserved_stems)
+    first_output, _qa, _report = PdfToWordConverter().convert(first_source, output_dir, output_stem=first_stem)
+    second_stem = unique_output_stem(second_source, output_dir, reserved_stems)
+    second_output, _qa, _report = PdfToWordConverter().convert(second_source, output_dir, output_stem=second_stem)
+
+    assert first_stem == "contract"
+    assert second_stem == "contract (2)"
+    assert first_output.name == "contract.docx"
+    assert second_output.name == "contract (2).docx"
+    assert first_output.exists()
+    assert second_output.exists()
 
 
 def _make_stamp_png(color: tuple[int, int, int] = (210, 0, 0)) -> bytes:
