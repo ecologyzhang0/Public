@@ -174,7 +174,8 @@ class PositionedWordBuilder:
     ) -> None:
         self._add_image(
             document,
-            ImageObject(bbox=vector.bbox, data=vector.data, extension="png"),
+            # Lines, boxes, and vector decoration must remain behind editable text.
+            ImageObject(bbox=vector.bbox, data=vector.data, extension="png", is_page_background=True),
             media_dir,
             shape_id,
             z_index,

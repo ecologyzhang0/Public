@@ -40,6 +40,8 @@ def test_digital_pdf_creates_editable_docx_and_report(tmp_path: Path) -> None:
     with zipfile.ZipFile(output) as archive:
         xml = archive.read("word/document.xml").decode("utf-8")
     assert "Editable text must survive conversion" in xml
+    assert "<wp:anchor" in xml
+    assert 'behindDoc="1"' in xml
     details = json.loads(report.read_text(encoding="utf-8"))
     assert details["pages"][0]["source_kind"] == "digital"
     assert details["pages"][0]["table_count"] == 1
