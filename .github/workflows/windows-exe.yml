@@ -27,7 +27,6 @@ jobs:
           Copy-Item "$root\tesseract.exe" build-assets/tesseract/
           Copy-Item "$root\*.dll" build-assets/tesseract/
           Copy-Item "$root\tessdata\eng.traineddata" build-assets/tesseract/tessdata/
-          Copy-Item "$root\tessdata\osd.traineddata" build-assets/tesseract/tessdata/
           Copy-Item "$root\tessdata\configs\tsv" build-assets/tesseract/tessdata/configs/
           Invoke-WebRequest -Uri https://github.com/tesseract-ocr/tessdata_fast/raw/main/chi_sim.traineddata -OutFile build-assets/tesseract/tessdata/chi_sim.traineddata
           $env:TESSDATA_PREFIX = "$PWD/build-assets/tesseract/tessdata"
