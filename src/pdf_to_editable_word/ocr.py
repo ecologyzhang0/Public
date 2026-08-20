@@ -30,6 +30,9 @@ class LocalTesseractOcr:
 
     @staticmethod
     def _find_executable() -> str | None:
+        configured = os.environ.get("PDF_TO_WORD_TESSERACT")
+        if configured and Path(configured).is_file():
+            return configured
         bundle_root = getattr(sys, "_MEIPASS", None)
         if bundle_root:
             bundled = Path(bundle_root) / "tesseract" / "tesseract.exe"
