@@ -4,7 +4,7 @@ from pathlib import Path
 from typing import Callable
 
 from .document_model import PdfAnalyzer
-from .ocr import LocalTesseractOcr, OcrUnavailableError
+from .ocr import LocalOcrEngine, OcrUnavailableError
 from .qa import QaResult, run_editability_qa, write_conversion_report
 from .scan_mask import build_ocr_cleaned_background, extract_scanned_stamps
 from .word_builder import PositionedWordBuilder
@@ -20,7 +20,7 @@ class PdfToWordConverter:
     def __init__(self, progress: ProgressCallback | None = None):
         self.progress = progress or (lambda _percent, _message: None)
         self.analyzer = PdfAnalyzer()
-        self.ocr = LocalTesseractOcr()
+        self.ocr = LocalOcrEngine()
         self.word_builder = PositionedWordBuilder()
 
     def convert(self, source_pdf: Path, output_dir: Path, ocr_mode: str = "auto") -> tuple[Path, QaResult, Path]:
