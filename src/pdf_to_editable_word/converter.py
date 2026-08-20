@@ -6,6 +6,7 @@ from typing import Callable
 from .document_model import PdfAnalyzer
 from .ocr import LocalTesseractOcr, OcrUnavailableError
 from .qa import QaResult, run_editability_qa, write_conversion_report
+from .scan_mask import build_ocr_cleaned_background
 from .word_builder import PositionedWordBuilder
 
 ProgressCallback = Callable[[int, str], None]
@@ -43,6 +44,16 @@ class PdfToWordConverter:
                 page.source_kind = "ocr"
                 if not page.text_spans:
                     page.qa_flags.append("ocr_returned_no_text")
+                else:
+                    cleaned_background = build_ocr_cleaned_background(page)
+                    if cleaned_background is not None:
+                        background_index = next(
+                            index
+                            for index, image in enumerate(page.images)
+                            if image.is_page_background
+                        )
+                        page.images[background_index] = cleaned_background
+                        page.qa_flags.append("ocr_text_background_cleaned")
             except OcrUnavailableError as error:
                 page.qa_flags.append(f"ocr_unavailable:{error}")
 

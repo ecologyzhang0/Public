@@ -28,6 +28,9 @@ def run_editability_qa(model: DocumentModel, docx_path: Path) -> QaResult:
         "source_stamps": sum(sum(image.is_stamp for image in page.images) for page in model.pages),
         "source_tables": sum(len(page.tables) for page in model.pages),
         "source_vector_overlays": sum(len(page.vectors) for page in model.pages),
+        "ocr_cleaned_backgrounds": sum(
+            sum(image.is_ocr_cleaned_background for image in page.images) for page in model.pages
+        ),
     }
     if not docx_path.exists():
         return QaResult("FAIL", ["docx_missing"], metrics)

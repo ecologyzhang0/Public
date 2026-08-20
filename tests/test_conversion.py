@@ -10,6 +10,7 @@ import pytest
 from PIL import Image, ImageDraw
 
 from pdf_to_editable_word.converter import PdfToWordConverter
+from pdf_to_editable_word.font_resolver import FontResolver
 from pdf_to_editable_word.ocr import LocalTesseractOcr
 
 
@@ -78,6 +79,26 @@ def test_red_stamp_is_separate_transparent_docx_media(tmp_path: Path) -> None:
     assert qa.status == "PASS_WITH_WARNING"
 
 
+def test_digital_text_keeps_bold_italic_and_font_family(tmp_path: Path) -> None:
+    source = tmp_path / "styled.pdf"
+    document = pymupdf.open()
+    page = document.new_page(width=595, height=842)
+    page.insert_text((72, 72), "Bold source", fontsize=14, fontname="hebo")
+    page.insert_text((72, 104), "Italic source", fontsize=14, fontname="heit")
+    document.save(source)
+    document.close()
+
+    output, _qa, _report = PdfToWordConverter().convert(source, tmp_path)
+
+    with zipfile.ZipFile(output) as archive:
+        xml = archive.read("word/document.xml").decode("utf-8")
+    assert "Bold source" in xml
+    assert "Italic source" in xml
+    assert "w:b" in xml
+    assert "w:i" in xml
+    assert FontResolver().resolve("ABCDEF+Calibri-Bold") == "Calibri"
+
+
 @pytest.mark.skipif(LocalTesseractOcr().executable is None, reason="local Tesseract is unavailable")
 def test_scanned_page_automatically_runs_ocr(tmp_path: Path) -> None:
     original = tmp_path / "original.pdf"
@@ -103,4 +124,6 @@ def test_scanned_page_automatically_runs_ocr(tmp_path: Path) -> None:
     details = json.loads(report.read_text(encoding="utf-8"))
     assert details["pages"][0]["source_kind"] == "ocr"
     assert details["pages"][0]["text_span_count"] > 0
+    assert details["pages"][0]["ocr_cleaned_background_count"] == 1
+    assert "ocr_text_background_cleaned" in details["pages"][0]["qa_flags"]
     assert qa.status == "PASS_WITH_WARNING"

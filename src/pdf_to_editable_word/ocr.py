@@ -106,7 +106,9 @@ class LocalTesseractOcr:
                     text=text,
                     bbox=BoundingBox(x0, y0, x1, y1),
                     font_name="Arial",
-                    font_size=max((y1 - y0) * 0.78, 7),
+                    # Tesseract returns the painted-glyph height. Arial's glyph height is
+                    # about 74% of the requested point size at this render resolution.
+                    font_size=max((y1 - y0) / 0.74, 7),
                     color=0,
                     source="ocr",
                     confidence=confidence,

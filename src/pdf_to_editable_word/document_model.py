@@ -36,6 +36,9 @@ class TextSpan:
     font_name: str
     font_size: float
     color: int
+    bold: bool = False
+    italic: bool = False
+    underline: bool = False
     source: str = "text_layer"
     confidence: float = 1.0
 
@@ -47,6 +50,7 @@ class ImageObject:
     extension: str
     is_stamp: bool = False
     is_page_background: bool = False
+    is_ocr_cleaned_background: bool = False
     source_xref: int | None = None
 
 
@@ -94,6 +98,9 @@ class DocumentModel:
                     "text_span_count": len(page.text_spans),
                     "image_count": len(page.images),
                     "stamp_count": sum(image.is_stamp for image in page.images),
+                    "ocr_cleaned_background_count": sum(
+                        image.is_ocr_cleaned_background for image in page.images
+                    ),
                     "table_count": len(page.tables),
                     "vector_count": len(page.vectors),
                     "qa_flags": page.qa_flags,
@@ -185,14 +192,20 @@ class PdfAnalyzer:
                     text = span.get("text", "")
                     if not text or not text.strip():
                         continue
+                    font_name = str(span.get("font", "Arial"))
+                    flags = int(span.get("flags", 0))
+                    normalized_font = font_name.casefold().replace("-", "").replace("_", "")
                     span_box = _bbox(span["bbox"])
                     spans.append(
                         TextSpan(
                             text=text,
                             bbox=span_box,
-                            font_name=span.get("font", "Arial"),
+                            font_name=font_name,
                             font_size=max(float(span.get("size", 10)), 4.0),
                             color=int(span.get("color", 0)),
+                            bold=bool(flags & 16) or "bold" in normalized_font or "black" in normalized_font,
+                            italic=bool(flags & 2) or "italic" in normalized_font or "oblique" in normalized_font,
+                            underline="underline" in normalized_font,
                         )
                     )
         return spans
