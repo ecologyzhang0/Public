@@ -12,9 +12,10 @@ from PIL import Image, ImageDraw
 
 from pdf_to_editable_word.app import unique_output_stem
 from pdf_to_editable_word.converter import PdfToWordConverter
-from pdf_to_editable_word.document_model import BoundingBox, DocumentModel, PageModel
+from pdf_to_editable_word.document_model import BoundingBox, DocumentModel, ImageObject, PageModel, TextSpan
 from pdf_to_editable_word.font_resolver import FontResolver
 from pdf_to_editable_word.ocr import LocalOcrEngine, LocalRapidOcr, LocalTesseractOcr
+from pdf_to_editable_word.scan_mask import suppress_ocr_text_under_stamps
 from pdf_to_editable_word.word_builder import PositionedWordBuilder
 
 
@@ -137,6 +138,92 @@ def test_red_stamp_is_separate_transparent_docx_media(tmp_path: Path) -> None:
     details = json.loads(report.read_text(encoding="utf-8"))
     assert details["pages"][0]["stamp_count"] == 1
     assert qa.status == "PASS_WITH_WARNING"
+
+
+def test_ocr_artifacts_overlapping_a_stamp_are_not_added_as_editable_text() -> None:
+    stamp = ImageObject(
+        bbox=BoundingBox(300, 420, 420, 540),
+        data=_make_stamp_png(),
+        extension="png",
+        is_stamp=True,
+    )
+    artifact = TextSpan(
+        text="O",
+        bbox=BoundingBox(315, 435, 405, 525),
+        font_name="Arial",
+        font_size=12,
+        color=0,
+        source="ocr",
+    )
+    nearby_text = TextSpan(
+        text="Keep this editable",
+        bbox=BoundingBox(72, 72, 220, 90),
+        font_name="Arial",
+        font_size=12,
+        color=0,
+        source="ocr",
+    )
+    page = PageModel(
+        number=1,
+        width=595,
+        height=842,
+        rotation=0,
+        text_spans=[artifact, nearby_text],
+        images=[stamp],
+        source_kind="ocr",
+    )
+
+    assert suppress_ocr_text_under_stamps(page) == 1
+    assert [span.text for span in page.text_spans] == ["Keep this editable"]
+
+
+def test_converter_removes_ocr_stamp_artifact_before_writing_word(tmp_path: Path) -> None:
+    original = tmp_path / "stamp-original.pdf"
+    document = pymupdf.open()
+    page = document.new_page(width=595, height=842)
+    page.insert_image((320, 450, 440, 570), stream=_make_stamp_png())
+    document.save(original)
+    document.close()
+
+    source_document = pymupdf.open(original)
+    raster = source_document[0].get_pixmap(matrix=pymupdf.Matrix(2, 2), alpha=False)
+    raster_path = tmp_path / "stamp-scan.png"
+    raster.save(raster_path)
+    source_document.close()
+    scanned = tmp_path / "stamp-scan.pdf"
+    scanned_document = pymupdf.open()
+    page = scanned_document.new_page(width=595, height=842)
+    page.insert_image(page.rect, filename=raster_path)
+    scanned_document.save(scanned)
+    scanned_document.close()
+
+    converter = PdfToWordConverter()
+    converter.ocr.extract = lambda _path, _page: [
+        TextSpan(
+            text="STAMP_ARTIFACT",
+            bbox=BoundingBox(325, 455, 415, 565),
+            font_name="Arial",
+            font_size=12,
+            color=0,
+            source="ocr",
+        ),
+        TextSpan(
+            text="Keep editable text",
+            bbox=BoundingBox(72, 72, 220, 90),
+            font_name="Arial",
+            font_size=12,
+            color=0,
+            source="ocr",
+        ),
+    ]
+    output, _qa, report = converter.convert(scanned, tmp_path)
+
+    with zipfile.ZipFile(output) as archive:
+        xml = archive.read("word/document.xml").decode("utf-8")
+    details = json.loads(report.read_text(encoding="utf-8"))
+    assert "STAMP_ARTIFACT" not in xml
+    assert "Keep editable text" in xml
+    assert any(flag.startswith("ocr_text_spans_suppressed_under_stamps:1") for flag in details["pages"][0]["qa_flags"])
 
 
 @pytest.mark.skipif(not LocalOcrEngine().is_available, reason="local OCR is unavailable")
