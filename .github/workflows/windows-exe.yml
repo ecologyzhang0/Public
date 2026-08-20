@@ -37,7 +37,11 @@ jobs:
         shell: pwsh
         run: |
           $env:PDF_TO_WORD_TESSERACT = "$PWD/build-assets/tesseract/tesseract.exe"
-          python -m pytest
+          python -m pytest --basetemp ocr-test-temp
+          $testExit = $LASTEXITCODE
+          Get-ChildItem ocr-test-temp -Recurse -Filter *.conversion-report.json | ForEach-Object { Get-Content $_.FullName }
+          Get-ChildItem ocr-test-temp -Recurse -Filter page.png | ForEach-Object { & "$PWD/build-assets/tesseract/tesseract.exe" $_.FullName stdout -l chi_sim+eng --psm 3 tsv }
+          if ($testExit -ne 0) { exit $testExit }
       - name: Build portable executable
         shell: pwsh
         run: |
