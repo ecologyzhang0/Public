@@ -90,8 +90,12 @@ class PositionedWordBuilder:
         properties = run._r.get_or_add_rPr()
         fonts = OxmlElement("w:rFonts")
         font_name = self.font_resolver.resolve(span.font_name)
-        for attribute in ("ascii", "hAnsi", "eastAsia"):
-            fonts.set(qn(f"w:{attribute}"), font_name)
+        fonts.set(qn("w:ascii"), font_name)
+        fonts.set(qn("w:hAnsi"), font_name)
+        fonts.set(
+            qn("w:eastAsia"),
+            self.font_resolver.resolve(span.east_asia_font_name or span.font_name),
+        )
         properties.append(fonts)
         size = OxmlElement("w:sz")
         size.set(qn("w:val"), str(max(round(span.font_size * 2), 8)))
