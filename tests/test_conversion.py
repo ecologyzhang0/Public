@@ -46,11 +46,11 @@ def test_digital_pdf_creates_editable_docx_and_report(tmp_path: Path) -> None:
     assert details["qa"]["status"] == qa.status
 
 
-def _make_stamp_png() -> bytes:
+def _make_stamp_png(color: tuple[int, int, int] = (210, 0, 0)) -> bytes:
     image = Image.new("RGB", (180, 180), "white")
     painter = ImageDraw.Draw(image)
-    painter.ellipse((10, 10, 170, 170), outline=(210, 0, 0), width=10)
-    painter.regular_polygon((90, 90, 54), n_sides=5, rotation=0, fill=(210, 0, 0))
+    painter.ellipse((10, 10, 170, 170), outline=color, width=10)
+    painter.regular_polygon((90, 90, 54), n_sides=5, rotation=0, fill=color)
     output = BytesIO()
     image.save(output, format="PNG")
     return output.getvalue()
@@ -77,6 +77,42 @@ def test_red_stamp_is_separate_transparent_docx_media(tmp_path: Path) -> None:
     details = json.loads(report.read_text(encoding="utf-8"))
     assert details["pages"][0]["stamp_count"] == 1
     assert qa.status == "PASS_WITH_WARNING"
+
+
+@pytest.mark.skipif(LocalTesseractOcr().executable is None, reason="local Tesseract is unavailable")
+@pytest.mark.parametrize("color", [(210, 0, 0), (0, 110, 210)])
+def test_scanned_colored_stamp_is_separated_as_transparent_media(
+    tmp_path: Path, color: tuple[int, int, int]
+) -> None:
+    original = tmp_path / "scanned-seal-source.pdf"
+    document = pymupdf.open()
+    page = document.new_page(width=595, height=842)
+    page.insert_text((72, 72), "Text remains editable below scanned seal", fontsize=13)
+    page.insert_image((320, 450, 440, 570), stream=_make_stamp_png(color))
+    document.save(original)
+    document.close()
+
+    source_document = pymupdf.open(original)
+    raster = source_document[0].get_pixmap(matrix=pymupdf.Matrix(2, 2), alpha=False)
+    raster_path = tmp_path / "scanned-seal.png"
+    raster.save(raster_path)
+    source_document.close()
+
+    scanned = tmp_path / "scanned-seal.pdf"
+    scanned_document = pymupdf.open()
+    page = scanned_document.new_page(width=595, height=842)
+    page.insert_image(page.rect, filename=raster_path)
+    scanned_document.save(scanned)
+    scanned_document.close()
+
+    output, _qa, report = PdfToWordConverter().convert(scanned, tmp_path)
+
+    with zipfile.ZipFile(output) as archive:
+        media = [Image.open(BytesIO(archive.read(name))).convert("RGBA") for name in archive.namelist() if name.startswith("word/media/")]
+    assert any(image.getpixel((0, 0))[3] == 0 for image in media)
+    details = json.loads(report.read_text(encoding="utf-8"))
+    assert details["pages"][0]["stamp_count"] == 1
+    assert any(flag.startswith("scanned_stamps_extracted:") for flag in details["pages"][0]["qa_flags"])
 
 
 def test_digital_text_keeps_bold_italic_and_font_family(tmp_path: Path) -> None:

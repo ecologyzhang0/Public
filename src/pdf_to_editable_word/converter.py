@@ -6,7 +6,7 @@ from typing import Callable
 from .document_model import PdfAnalyzer
 from .ocr import LocalTesseractOcr, OcrUnavailableError
 from .qa import QaResult, run_editability_qa, write_conversion_report
-from .scan_mask import build_ocr_cleaned_background
+from .scan_mask import build_ocr_cleaned_background, extract_scanned_stamps
 from .word_builder import PositionedWordBuilder
 
 ProgressCallback = Callable[[int, str], None]
@@ -42,6 +42,9 @@ class PdfToWordConverter:
             try:
                 page.text_spans = self.ocr.extract(source_pdf, index)
                 page.source_kind = "ocr"
+                extracted_stamps = extract_scanned_stamps(page)
+                if extracted_stamps:
+                    page.qa_flags.append(f"scanned_stamps_extracted:{extracted_stamps}")
                 if not page.text_spans:
                     page.qa_flags.append("ocr_returned_no_text")
                 else:
