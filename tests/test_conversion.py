@@ -50,6 +50,7 @@ def test_digital_pdf_creates_editable_docx_and_report(tmp_path: Path) -> None:
     assert details["pages"][0]["source_kind"] == "digital"
     assert details["pages"][0]["table_count"] == 1
     assert details["qa"]["status"] == qa.status
+    assert details["qa"]["metrics"]["missing_editable_text_spans"] == 0
 
 
 def test_batch_output_names_do_not_overwrite_duplicate_pdf_names(tmp_path: Path) -> None:
@@ -64,9 +65,9 @@ def test_batch_output_names_do_not_overwrite_duplicate_pdf_names(tmp_path: Path)
     _make_digital_pdf(second_source)
 
     first_stem = unique_output_stem(first_source, output_dir, reserved_stems)
-    first_output, _qa, _report = PdfToWordConverter().convert(first_source, output_dir, output_stem=first_stem)
+    first_output, _qa, first_report = PdfToWordConverter().convert(first_source, output_dir, output_stem=first_stem)
     second_stem = unique_output_stem(second_source, output_dir, reserved_stems)
-    second_output, _qa, _report = PdfToWordConverter().convert(second_source, output_dir, output_stem=second_stem)
+    second_output, _qa, second_report = PdfToWordConverter().convert(second_source, output_dir, output_stem=second_stem)
 
     assert first_stem == "contract"
     assert second_stem == "contract (2)"
@@ -74,6 +75,35 @@ def test_batch_output_names_do_not_overwrite_duplicate_pdf_names(tmp_path: Path)
     assert second_output.name == "contract (2).docx"
     assert first_output.exists()
     assert second_output.exists()
+    assert first_report.name == "contract.conversion.json"
+    assert second_report.name == "contract (2).conversion.json"
+    assert first_report.exists()
+    assert second_report.exists()
+
+
+def test_qa_fails_when_any_source_text_is_not_in_the_word_document(tmp_path: Path) -> None:
+    source = tmp_path / "source.pdf"
+    _make_digital_pdf(source)
+    output, qa, _report = PdfToWordConverter().convert(source, tmp_path)
+
+    with zipfile.ZipFile(output) as archive:
+        entries = {entry.filename: archive.read(entry.filename) for entry in archive.infolist()}
+    document_xml = entries["word/document.xml"].replace(
+        b"Second positioned line", b"Second missing line", 1
+    )
+    entries["word/document.xml"] = document_xml
+    with zipfile.ZipFile(output, "w") as archive:
+        for name, content in entries.items():
+            archive.writestr(name, content)
+
+    from pdf_to_editable_word.qa import run_editability_qa
+    from pdf_to_editable_word.document_model import PdfAnalyzer
+
+    model = PdfAnalyzer().analyze(source)
+    altered_qa = run_editability_qa(model, output)
+    assert "editable_text_spans_missing_from_document_xml" in altered_qa.flags
+    assert altered_qa.metrics["missing_editable_text_spans"] == 1
+    assert altered_qa.status == "FAIL"
 
 
 def _make_stamp_png(color: tuple[int, int, int] = (210, 0, 0)) -> bytes:
