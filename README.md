@@ -1,6 +1,6 @@
 # PDF To Editable Word
 
-Windows-first local application that converts each selected PDF into an editable DOCX.
+Windows-first local application that converts each selected PDF into an editable DOCX. Its UI uses the standard Windows Python runtime rather than a large third-party GUI toolkit to keep the portable executable small.
 
 The application has one user workflow: choose a PDF, choose an output folder, and convert. It automatically uses the PDF text layer when available and invokes local OCR only when a page does not contain usable text.
 
