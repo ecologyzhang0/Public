@@ -36,6 +36,7 @@ class TextSpan:
     font_name: str
     font_size: float
     color: int
+    east_asia_font_name: str | None = None
     bold: bool = False
     italic: bool = False
     underline: bool = False
