@@ -23,7 +23,13 @@ class PdfToWordConverter:
         self.ocr = LocalOcrEngine()
         self.word_builder = PositionedWordBuilder()
 
-    def convert(self, source_pdf: Path, output_dir: Path, ocr_mode: str = "auto") -> tuple[Path, QaResult, Path]:
+    def convert(
+        self,
+        source_pdf: Path,
+        output_dir: Path,
+        ocr_mode: str = "auto",
+        output_stem: str | None = None,
+    ) -> tuple[Path, QaResult, Path]:
         source_pdf = source_pdf.expanduser().resolve()
         output_dir = output_dir.expanduser().resolve()
         if source_pdf.suffix.lower() != ".pdf":
@@ -60,7 +66,7 @@ class PdfToWordConverter:
             except OcrUnavailableError as error:
                 page.qa_flags.append(f"ocr_unavailable:{error}")
 
-        output_docx = output_dir / f"{source_pdf.stem}.docx"
+        output_docx = output_dir / f"{output_stem or source_pdf.stem}.docx"
         self.progress(62, "正在生成可编辑 Word 文件")
         self.word_builder.build(model, output_docx)
         self.progress(86, "正在检查可编辑内容")
