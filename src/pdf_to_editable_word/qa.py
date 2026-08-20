@@ -5,6 +5,7 @@ import shutil
 import zipfile
 from dataclasses import dataclass
 from pathlib import Path
+from xml.etree import ElementTree
 
 from .document_model import DocumentModel
 
@@ -36,15 +37,18 @@ def run_editability_qa(model: DocumentModel, docx_path: Path) -> QaResult:
         return QaResult("FAIL", ["docx_missing"], metrics)
     try:
         with zipfile.ZipFile(docx_path) as archive:
-            document_xml = archive.read("word/document.xml").decode("utf-8", errors="ignore")
+            document_xml = archive.read("word/document.xml")
             media_files = [name for name in archive.namelist() if name.startswith("word/media/")]
-    except (KeyError, zipfile.BadZipFile):
+        document_text = "".join(ElementTree.fromstring(document_xml).itertext())
+    except (KeyError, zipfile.BadZipFile, ElementTree.ParseError):
         return QaResult("FAIL", ["docx_package_invalid"], metrics)
 
-    expected_text = "".join(span.text.strip() for page in model.pages for span in page.text_spans)
+    expected_spans = [span.text.strip() for page in model.pages for span in page.text_spans if span.text.strip()]
+    missing_spans = [text for text in expected_spans if text not in document_text]
     metrics["word_media_files"] = len(media_files)
-    if expected_text and not any(span.text.strip() in document_xml for page in model.pages for span in page.text_spans):
-        flags.append("editable_text_missing_from_document_xml")
+    metrics["missing_editable_text_spans"] = len(missing_spans)
+    if missing_spans:
+        flags.append("editable_text_spans_missing_from_document_xml")
     if metrics["source_images"] and not media_files:
         flags.append("images_missing_from_docx")
     if any(page.source_kind == "scanned" for page in model.pages):
@@ -56,7 +60,7 @@ def run_editability_qa(model: DocumentModel, docx_path: Path) -> QaResult:
     # A DOCX package inspection confirms editability primitives, not pixel-perfect rendering.
     flags.append("visual_similarity_requires_word_review")
 
-    status = "PASS_WITH_WARNING" if flags else "PASS"
+    status = "FAIL" if missing_spans else "PASS_WITH_WARNING" if flags else "PASS"
     return QaResult(status, flags, metrics)
 
 
