@@ -23,25 +23,20 @@ jobs:
           choco install tesseract --yes --no-progress
           $root = 'C:\Program Files\Tesseract-OCR'
           if (!(Test-Path "$root\tesseract.exe")) { throw "Tesseract installation not found at $root" }
-          New-Item -ItemType Directory -Force -Path build-assets/tesseract/tessdata | Out-Null
+          New-Item -ItemType Directory -Force -Path build-assets/tesseract/tessdata/configs | Out-Null
           Copy-Item "$root\tesseract.exe" build-assets/tesseract/
           Copy-Item "$root\*.dll" build-assets/tesseract/
           Copy-Item "$root\tessdata\eng.traineddata" build-assets/tesseract/tessdata/
           Copy-Item "$root\tessdata\osd.traineddata" build-assets/tesseract/tessdata/
+          Copy-Item "$root\tessdata\configs\tsv" build-assets/tesseract/tessdata/configs/
           Invoke-WebRequest -Uri https://github.com/tesseract-ocr/tessdata_fast/raw/main/chi_sim.traineddata -OutFile build-assets/tesseract/tessdata/chi_sim.traineddata
           $env:TESSDATA_PREFIX = "$PWD/build-assets/tesseract/tessdata"
           & "$PWD/build-assets/tesseract/tesseract.exe" --list-langs
-          python -c "from PIL import Image,ImageDraw,ImageFont; im=Image.new('RGB',(900,180),'white'); ImageDraw.Draw(im).text((24,48),'OCR ENGINE CHECK',font=ImageFont.truetype(r'C:\Windows\Fonts\arial.ttf',56),fill='black'); im.save('ocr-probe.png')"
-          & "$PWD/build-assets/tesseract/tesseract.exe" ocr-probe.png stdout -l eng --psm 6
       - name: Run conversion tests
         shell: pwsh
         run: |
           $env:PDF_TO_WORD_TESSERACT = "$PWD/build-assets/tesseract/tesseract.exe"
-          python -m pytest --basetemp ocr-test-temp
-          $testExit = $LASTEXITCODE
-          Get-ChildItem ocr-test-temp -Recurse -Filter *.conversion-report.json | ForEach-Object { Get-Content $_.FullName }
-          Get-ChildItem ocr-test-temp -Recurse -Filter page.png | ForEach-Object { & "$PWD/build-assets/tesseract/tesseract.exe" $_.FullName stdout -l chi_sim+eng --psm 3 tsv }
-          if ($testExit -ne 0) { exit $testExit }
+          python -m pytest
       - name: Build portable executable
         shell: pwsh
         run: |
