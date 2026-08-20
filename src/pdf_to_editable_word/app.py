@@ -10,6 +10,19 @@ from tkinter import filedialog, messagebox, ttk
 from .converter import PdfToWordConverter
 
 
+def unique_output_stem(source: Path, output_dir: Path, reserved_stems: set[str]) -> str:
+    """Return a Word filename stem that cannot overwrite this batch or prior output."""
+
+    stem = source.stem
+    candidate = stem
+    sequence = 2
+    while candidate.casefold() in reserved_stems or (output_dir / f"{candidate}.docx").exists():
+        candidate = f"{stem} ({sequence})"
+        sequence += 1
+    reserved_stems.add(candidate.casefold())
+    return candidate
+
+
 class ConverterWindow(tk.Tk):
     """Small native Windows UI with no third-party UI runtime."""
 
@@ -19,9 +32,9 @@ class ConverterWindow(tk.Tk):
         self.minsize(640, 360)
         self.resizable(False, False)
 
-        self.source_path: Path | None = None
+        self.source_paths: list[Path] = []
         self.output_path = Path.home() / "Documents"
-        self.latest_docx: Path | None = None
+        self.latest_docxs: list[Path] = []
         self.events: queue.Queue[tuple[str, object]] = queue.Queue()
         self.is_converting = False
 
@@ -78,20 +91,24 @@ class ConverterWindow(tk.Tk):
             actions, text="转换", command=self._start_conversion, style="Primary.TButton", state="disabled"
         )
         self.convert_button.pack(side="left")
-        self.open_button = ttk.Button(actions, text="打开 Word 文件", command=self._open_result, state="disabled")
+        self.open_button = ttk.Button(actions, text="打开输出文件夹", command=self._open_result, state="disabled")
         self.open_button.pack(side="left", padx=(10, 0))
 
     def _choose_pdf(self) -> None:
-        selected = filedialog.askopenfilename(
-            title="选择 PDF", filetypes=[("PDF 文件", "*.pdf")], initialdir=str(Path.home())
+        selected = filedialog.askopenfilenames(
+            title="选择一个或多个 PDF", filetypes=[("PDF 文件", "*.pdf")], initialdir=str(Path.home())
         )
         if not selected:
             return
-        self.source_path = Path(selected)
-        self.source_label.set(self.source_path.name)
-        self.status_label.set("已准备好在本机转换。")
+        self.source_paths = [Path(path) for path in selected]
+        if len(self.source_paths) == 1:
+            self.source_label.set(self.source_paths[0].name)
+        else:
+            self.source_label.set(f"已选择 {len(self.source_paths)} 个 PDF")
+        self.status_label.set("已准备好在本机逐个转换。")
         self.convert_button.configure(state="normal")
         self.open_button.configure(state="disabled")
+        self.latest_docxs = []
 
     def _choose_output(self) -> None:
         selected = filedialog.askdirectory(title="选择输出文件夹", initialdir=str(self.output_path))
@@ -100,7 +117,7 @@ class ConverterWindow(tk.Tk):
             self.output_label.set(str(self.output_path))
 
     def _start_conversion(self) -> None:
-        if self.source_path is None or self.is_converting:
+        if not self.source_paths or self.is_converting:
             return
         self.is_converting = True
         self.progress_value.set(0)
@@ -113,9 +130,37 @@ class ConverterWindow(tk.Tk):
 
     def _convert_worker(self) -> None:
         try:
-            converter = PdfToWordConverter(lambda percent, message: self.events.put(("progress", (percent, message))))
-            docx, qa, report = converter.convert(self.source_path, self.output_path)  # type: ignore[arg-type]
-            self.events.put(("completed", (docx, qa.status, report)))
+            total = len(self.source_paths)
+            converter = PdfToWordConverter()
+            outputs: list[Path] = []
+            failures: list[tuple[str, str]] = []
+            reserved_stems: set[str] = set()
+            for index, source_path in enumerate(self.source_paths):
+                source_name = source_path.name
+
+                def on_progress(
+                    percent: int, message: str, current: int = index, current_name: str = source_name
+                ) -> None:
+                    overall_percent = int(((current + percent / 100) / total) * 100)
+                    self.events.put(
+                        ("progress", (overall_percent, f"正在转换 {current + 1}/{total}：{current_name} - {message}"))
+                    )
+
+                converter.progress = on_progress
+                output_stem = unique_output_stem(source_path, self.output_path, reserved_stems)
+                try:
+                    docx, _qa, _report = converter.convert(
+                        source_path, self.output_path, output_stem=output_stem
+                    )
+                    outputs.append(docx)
+                except Exception as error:
+                    failures.append((source_path.name, str(error)))
+
+            if outputs:
+                self.events.put(("completed", (outputs, failures)))
+            else:
+                details = "\n".join(f"{name}: {reason}" for name, reason in failures)
+                self.events.put(("failed", details or "没有可转换的 PDF 文件。"))
         except Exception as error:
             self.events.put(("failed", str(error)))
 
@@ -128,11 +173,17 @@ class ConverterWindow(tk.Tk):
                     self.progress_value.set(percent)
                     self.status_label.set(message)
                 elif event == "completed":
-                    docx, _qa_status, report = payload  # type: ignore[misc]
-                    self.latest_docx = docx
+                    outputs, failures = payload  # type: ignore[misc]
+                    self.latest_docxs = outputs
                     self.progress_value.set(100)
-                    self.status_label.set(f"转换完成，请在 Word 中检查版式。质检报告：{report.name}")
+                    result = f"已完成 {len(outputs)} 个文件，请在 Word 中检查版式。"
+                    if failures:
+                        result += f" {len(failures)} 个文件转换失败。"
+                    self.status_label.set(result)
                     self.open_button.configure(state="normal")
+                    if failures:
+                        failed_names = "\n".join(name for name, _reason in failures)
+                        messagebox.showwarning("部分文件转换失败", f"以下文件未转换成功：\n{failed_names}")
                     self._finish_conversion()
                 elif event == "failed":
                     self.status_label.set("转换失败。")
@@ -144,17 +195,17 @@ class ConverterWindow(tk.Tk):
 
     def _finish_conversion(self) -> None:
         self.is_converting = False
-        self.convert_button.configure(state="normal" if self.source_path else "disabled")
+        self.convert_button.configure(state="normal" if self.source_paths else "disabled")
         self.choose_pdf_button.configure(state="normal")
         self.choose_output_button.configure(state="normal")
 
     def _open_result(self) -> None:
-        if self.latest_docx is None:
+        if not self.latest_docxs:
             return
         if hasattr(os, "startfile"):
-            os.startfile(self.latest_docx)  # type: ignore[attr-defined]
+            os.startfile(self.output_path)  # type: ignore[attr-defined]
         else:
-            messagebox.showinfo("文件已生成", str(self.latest_docx))
+            messagebox.showinfo("文件已生成", str(self.output_path))
 
 
 def main() -> int:
