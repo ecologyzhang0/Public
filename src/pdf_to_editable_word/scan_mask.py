@@ -59,6 +59,21 @@ def extract_scanned_stamps(page: PageModel) -> int:
     return len(extracted)
 
 
+def suppress_ocr_text_under_stamps(page: PageModel) -> int:
+    """Remove OCR artifacts generated from a scanned stamp's ink and outline."""
+
+    stamps = [image for image in page.images if image.is_stamp]
+    if not stamps or not page.text_spans:
+        return 0
+    original_count = len(page.text_spans)
+    page.text_spans = [
+        span
+        for span in page.text_spans
+        if not any(_span_overlaps_stamp(span, stamp) for stamp in stamps)
+    ]
+    return original_count - len(page.text_spans)
+
+
 def build_ocr_cleaned_background(page: PageModel) -> ImageObject | None:
     """Create a scan background with only recognized plain-paper text removed."""
     background = next((image for image in page.images if image.is_page_background), None)
@@ -232,6 +247,19 @@ def _image_box(
     if x1 - x0 < 2 or y1 - y0 < 2:
         return None
     return x0, y0, x1, y1
+
+
+def _span_overlaps_stamp(span: TextSpan, stamp: ImageObject) -> bool:
+    overlap_width = max(0.0, min(span.bbox.x1, stamp.bbox.x1) - max(span.bbox.x0, stamp.bbox.x0))
+    overlap_height = max(0.0, min(span.bbox.y1, stamp.bbox.y1) - max(span.bbox.y0, stamp.bbox.y0))
+    if not overlap_width or not overlap_height:
+        return False
+    span_area = max(span.bbox.width * span.bbox.height, 1.0)
+    overlap_ratio = overlap_width * overlap_height / span_area
+    center_x = (span.bbox.x0 + span.bbox.x1) / 2
+    center_y = (span.bbox.y0 + span.bbox.y1) / 2
+    center_in_stamp = stamp.bbox.x0 <= center_x <= stamp.bbox.x1 and stamp.bbox.y0 <= center_y <= stamp.bbox.y1
+    return center_in_stamp or overlap_ratio >= 0.2
 
 
 def _plain_paper_color(source: Image.Image, box: tuple[int, int, int, int]) -> tuple[int, int, int] | None:
