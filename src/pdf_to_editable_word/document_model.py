@@ -264,11 +264,27 @@ class PdfAnalyzer:
         )
         painter = ImageDraw.Draw(canvas)
         for drawing in drawings:
-            color = drawing.get("color") or drawing.get("fill")
-            if color is None:
+            stroke_color = drawing.get("color")
+            fill_color = drawing.get("fill")
+            if stroke_color is None and fill_color is None:
                 continue
-            alpha = round(255 * float(drawing.get("stroke_opacity") or drawing.get("fill_opacity") or 1))
-            rgba = tuple(round(max(0, min(component, 1)) * 255) for component in color) + (alpha,)
+
+            def to_rgba(color, opacity):
+                alpha = round(255 * float(opacity if opacity is not None else 1))
+                return tuple(
+                    round(max(0, min(component, 1)) * 255) for component in color
+                ) + (alpha,)
+
+            stroke_rgba = (
+                to_rgba(stroke_color, drawing.get("stroke_opacity"))
+                if stroke_color is not None
+                else None
+            )
+            fill_rgba = (
+                to_rgba(fill_color, drawing.get("fill_opacity"))
+                if fill_color is not None
+                else None
+            )
             width = max(round(float(drawing.get("width") or 1) * scale), 1)
             for item in drawing.get("items", []):
                 operator = item[0]
@@ -276,16 +292,43 @@ class PdfAnalyzer:
                     start, end = item[1], item[2]
                     painter.line(
                         (start.x * scale, start.y * scale, end.x * scale, end.y * scale),
-                        fill=rgba,
+                        fill=stroke_rgba or fill_rgba,
                         width=width,
                     )
                 elif operator == "re":
                     rect = item[1]
                     painter.rectangle(
                         (rect.x0 * scale, rect.y0 * scale, rect.x1 * scale, rect.y1 * scale),
-                        outline=rgba,
+                        fill=fill_rgba,
+                        outline=stroke_rgba,
                         width=width,
                     )
+                elif operator == "c" and len(item) == 5:
+                    start, control_one, control_two, end = item[1:]
+                    curve = []
+                    for step in range(17):
+                        t = step / 16
+                        inverse_t = 1 - t
+                        x = (
+                            inverse_t**3 * start.x
+                            + 3 * inverse_t**2 * t * control_one.x
+                            + 3 * inverse_t * t**2 * control_two.x
+                            + t**3 * end.x
+                        )
+                        y = (
+                            inverse_t**3 * start.y
+                            + 3 * inverse_t**2 * t * control_one.y
+                            + 3 * inverse_t * t**2 * control_two.y
+                            + t**3 * end.y
+                        )
+                        curve.append((x * scale, y * scale))
+                    painter.line(curve, fill=stroke_rgba or fill_rgba, width=width)
+                elif operator == "qu":
+                    quad = item[1]
+                    points = [quad.ul, quad.ur, quad.lr, quad.ll]
+                    polygon = [(point.x * scale, point.y * scale) for point in points]
+                    painter.polygon(polygon, fill=fill_rgba)
+                    painter.line(polygon + [polygon[0]], fill=stroke_rgba or fill_rgba, width=width)
         content_box = canvas.getbbox()
         if not content_box:
             return []
