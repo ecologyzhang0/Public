@@ -134,6 +134,7 @@ class ConverterWindow(tk.Tk):
             converter = PdfToWordConverter()
             outputs: list[Path] = []
             failures: list[tuple[str, str]] = []
+            validation_failures: list[tuple[str, Path]] = []
             reserved_stems: set[str] = set()
             for index, source_path in enumerate(self.source_paths):
                 source_name = source_path.name
@@ -149,15 +150,17 @@ class ConverterWindow(tk.Tk):
                 converter.progress = on_progress
                 output_stem = unique_output_stem(source_path, self.output_path, reserved_stems)
                 try:
-                    docx, _qa, _report = converter.convert(
+                    docx, qa, report = converter.convert(
                         source_path, self.output_path, output_stem=output_stem
                     )
                     outputs.append(docx)
+                    if qa.status == "FAIL":
+                        validation_failures.append((source_path.name, report))
                 except Exception as error:
                     failures.append((source_path.name, str(error)))
 
             if outputs:
-                self.events.put(("completed", (outputs, failures)))
+                self.events.put(("completed", (outputs, failures, validation_failures)))
             else:
                 details = "\n".join(f"{name}: {reason}" for name, reason in failures)
                 self.events.put(("failed", details or "没有可转换的 PDF 文件。"))
@@ -173,17 +176,25 @@ class ConverterWindow(tk.Tk):
                     self.progress_value.set(percent)
                     self.status_label.set(message)
                 elif event == "completed":
-                    outputs, failures = payload  # type: ignore[misc]
+                    outputs, failures, validation_failures = payload  # type: ignore[misc]
                     self.latest_docxs = outputs
                     self.progress_value.set(100)
                     result = f"已完成 {len(outputs)} 个文件，请在 Word 中检查版式。"
                     if failures:
                         result += f" {len(failures)} 个文件转换失败。"
+                    if validation_failures:
+                        result += f" {len(validation_failures)} 个文件未通过可编辑文本自检。"
                     self.status_label.set(result)
                     self.open_button.configure(state="normal")
                     if failures:
                         failed_names = "\n".join(name for name, _reason in failures)
                         messagebox.showwarning("部分文件转换失败", f"以下文件未转换成功：\n{failed_names}")
+                    if validation_failures:
+                        failed_names = "\n".join(name for name, _report in validation_failures)
+                        messagebox.showwarning(
+                            "可编辑文本自检未通过",
+                            f"以下 Word 已生成，但部分文字未通过自检；请查看同名 .conversion.json 报告：\n{failed_names}",
+                        )
                     self._finish_conversion()
                 elif event == "failed":
                     self.status_label.set("转换失败。")
