@@ -109,7 +109,12 @@ def test_scanned_colored_stamp_is_separated_as_transparent_media(
 
     with zipfile.ZipFile(output) as archive:
         media = [Image.open(BytesIO(archive.read(name))).convert("RGBA") for name in archive.namelist() if name.startswith("word/media/")]
+        xml = archive.read("word/document.xml").decode("utf-8")
     assert any(image.getpixel((0, 0))[3] == 0 for image in media)
+    assert "<wp:anchor" in xml
+    assert 'behindDoc="1"' in xml
+    assert 'behindDoc="0"' in xml
+    assert "Text remains editable below scanned seal" in xml
     details = json.loads(report.read_text(encoding="utf-8"))
     assert details["pages"][0]["stamp_count"] == 1
     assert any(flag.startswith("scanned_stamps_extracted:") for flag in details["pages"][0]["qa_flags"])

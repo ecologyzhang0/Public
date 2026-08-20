@@ -70,7 +70,10 @@ class PositionedWordBuilder:
         paragraph_properties = paragraph._p.get_or_add_pPr()
         frame = OxmlElement("w:framePr")
         frame.set(qn("w:w"), str(_frame_width_twips(span.bbox.width)))
-        frame.set(qn("w:h"), str(max(round(span.bbox.height * 20), 20)))
+        # Word clips text inside a fixed-height frame. OCR glyph boxes only measure
+        # painted pixels, so they are shorter than the reconstructed font's line box.
+        frame_height = max(span.bbox.height, span.font_size * 1.4)
+        frame.set(qn("w:h"), str(max(round(frame_height * 20), 20)))
         frame.set(qn("w:x"), str(round(span.bbox.x0 * 20)))
         # PDF glyph boxes begin at the ascender while Word frames begin at paragraph layout top.
         # OCR boxes already follow the bitmap glyph top, so they need a separate correction.
@@ -119,23 +122,52 @@ class PositionedWordBuilder:
         image_path.write_bytes(image.data)
         paragraph = document.add_paragraph()
         paragraph.paragraph_format.space_after = Pt(0)
-        paragraph_properties = paragraph._p.get_or_add_pPr()
-        frame = OxmlElement("w:framePr")
-        frame.set(qn("w:w"), str(_frame_width_twips(image.bbox.width)))
-        frame.set(qn("w:h"), str(max(round(image.bbox.height * 20), 20)))
-        # Word/LibreOffice reserves a leading inline-image inset inside a frame.
-        frame.set(qn("w:x"), str(round((image.bbox.x0 - 18) * 20)))
-        frame.set(qn("w:y"), str(round(image.bbox.y0 * 20)))
-        frame.set(qn("w:hAnchor"), "page")
-        frame.set(qn("w:vAnchor"), "page")
-        frame.set(qn("w:wrap"), "notBeside")
-        frame.set(qn("w:hSpace"), "0")
-        frame.set(qn("w:vSpace"), "0")
-        frame.set(qn("w:zIndex"), str(z_index))
-        paragraph_properties.append(frame)
-        paragraph.add_run().add_picture(
+        run = paragraph.add_run()
+        run.add_picture(
             str(image_path), width=Pt(image.bbox.width), height=Pt(image.bbox.height)
         )
+        self._make_picture_floating(
+            run,
+            image.bbox.x0,
+            image.bbox.y0,
+            z_index,
+            behind_text=image.is_page_background,
+        )
+
+    @staticmethod
+    def _make_picture_floating(run, x_points: float, y_points: float, z_index: int, behind_text: bool) -> None:
+        """Convert python-docx's inline picture to a Word-compatible page anchor."""
+        inline = run._r.xpath("./w:drawing/wp:inline")[0]
+        anchor = OxmlElement("wp:anchor")
+        for attribute, value in {
+            "distT": "0",
+            "distB": "0",
+            "distL": "0",
+            "distR": "0",
+            "simplePos": "0",
+            "relativeHeight": str(max(z_index, 0)),
+            "behindDoc": "1" if behind_text else "0",
+            "locked": "0",
+            "layoutInCell": "1",
+            "allowOverlap": "1",
+        }.items():
+            anchor.set(attribute, value)
+        simple_position = OxmlElement("wp:simplePos")
+        simple_position.set("x", "0")
+        simple_position.set("y", "0")
+        anchor.append(simple_position)
+        for tag, offset in (("wp:positionH", x_points), ("wp:positionV", y_points)):
+            position = OxmlElement(tag)
+            position.set("relativeFrom", "page")
+            value = OxmlElement("wp:posOffset")
+            value.text = str(round(offset * 12700))
+            position.append(value)
+            anchor.append(position)
+        for child in list(inline):
+            if child.tag == qn("wp:docPr"):
+                anchor.append(OxmlElement("wp:wrapNone"))
+            anchor.append(child)
+        inline.getparent().replace(inline, anchor)
 
     def _add_vector(
         self, document: Document, vector: VectorObject, media_dir: Path, shape_id: int, z_index: int
