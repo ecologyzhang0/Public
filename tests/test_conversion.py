@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-import shutil
 import zipfile
 from io import BytesIO
 from pathlib import Path
@@ -11,6 +10,7 @@ import pytest
 from PIL import Image, ImageDraw
 
 from pdf_to_editable_word.converter import PdfToWordConverter
+from pdf_to_editable_word.ocr import LocalTesseractOcr
 
 
 def _make_digital_pdf(path: Path) -> None:
@@ -78,7 +78,7 @@ def test_red_stamp_is_separate_transparent_docx_media(tmp_path: Path) -> None:
     assert qa.status == "PASS_WITH_WARNING"
 
 
-@pytest.mark.skipif(shutil.which("tesseract") is None, reason="local Tesseract is unavailable")
+@pytest.mark.skipif(LocalTesseractOcr().executable is None, reason="local Tesseract is unavailable")
 def test_scanned_page_automatically_runs_ocr(tmp_path: Path) -> None:
     original = tmp_path / "original.pdf"
     _make_digital_pdf(original)
