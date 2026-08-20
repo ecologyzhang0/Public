@@ -50,6 +50,7 @@ class LocalTesseractOcr:
             page = document[page_index]
             scale = 200 / 72
             pixmap = page.get_pixmap(matrix=pymupdf.Matrix(scale, scale), alpha=False)
+            pixmap.set_dpi(200, 200)
             with tempfile.TemporaryDirectory(prefix="pdf2word-ocr-") as temp_dir:
                 image_path = Path(temp_dir) / "page.png"
                 pixmap.save(str(image_path))
