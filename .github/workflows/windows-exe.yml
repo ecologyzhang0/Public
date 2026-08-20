@@ -31,6 +31,8 @@ jobs:
           Invoke-WebRequest -Uri https://github.com/tesseract-ocr/tessdata_fast/raw/main/chi_sim.traineddata -OutFile build-assets/tesseract/tessdata/chi_sim.traineddata
           $env:TESSDATA_PREFIX = "$PWD/build-assets/tesseract/tessdata"
           & "$PWD/build-assets/tesseract/tesseract.exe" --list-langs
+          python -c "from PIL import Image,ImageDraw,ImageFont; im=Image.new('RGB',(900,180),'white'); ImageDraw.Draw(im).text((24,48),'OCR ENGINE CHECK',font=ImageFont.truetype(r'C:\Windows\Fonts\arial.ttf',56),fill='black'); im.save('ocr-probe.png')"
+          & "$PWD/build-assets/tesseract/tesseract.exe" ocr-probe.png stdout -l eng --psm 6
       - name: Run conversion tests
         shell: pwsh
         run: |
