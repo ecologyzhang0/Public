@@ -60,7 +60,7 @@ class LocalTesseractOcr:
                     "-l",
                     self.languages,
                     "--psm",
-                    "6",
+                    "3",
                     "tsv",
                 ]
                 environment = None
