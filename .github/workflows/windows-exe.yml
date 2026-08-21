@@ -28,6 +28,16 @@ jobs:
           & "$upxDir/upx.exe" --version
           pyinstaller --noconfirm --clean --onefile --windowed --upx-dir "$upxDir" --name PDFtoEditableWord --collect-all pymupdf --collect-all rapidocr --collect-all onnxruntime --paths src src/pdf_to_editable_word/app.py
           Write-Output "Executable bytes: $((Get-Item dist/PDFtoEditableWord.exe).Length)"
+      - name: Smoke test portable executable launch
+        shell: pwsh
+        run: |
+          Start-Process -FilePath dist/PDFtoEditableWord.exe
+          Start-Sleep -Seconds 8
+          $running = @(Get-Process PDFtoEditableWord -ErrorAction SilentlyContinue)
+          if ($running.Count -eq 0) {
+            throw "The portable executable exited before its native window could start."
+          }
+          $running | Stop-Process -Force
       - name: Upload executable
         uses: actions/upload-artifact@v4
         with:
